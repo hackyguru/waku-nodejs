@@ -6,13 +6,14 @@ const CLIENT_TOPIC = '/waku-chat/1/client-message/proto';
 const SERVER_TOPIC = '/waku-chat/1/server-response/proto';
 const RETRY_DELAY = 2000; // 2 seconds
 
-const Home = () => {
+const TestPage = () => {
   const [waku, setWaku] = useState(null);
-  const [messages, setMessages] = useState([]);
   const [status, setStatus] = useState("disconnected");
-  const [inputMessage, setInputMessage] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [customResponse, setCustomResponse] = useState("");
+  const [autoReply, setAutoReply] = useState(true);
   const [peerCount, setPeerCount] = useState(0);
-  
+
   // Helper function to send messages with retry
   const sendMessageWithRetry = async (node, encoder, message, retries = 3) => {
     for (let i = 0; i < retries; i++) {
@@ -61,15 +62,30 @@ const Home = () => {
           throw new Error("Required protocols not available");
         }
 
-        const encoder = createEncoder({ contentTopic: CLIENT_TOPIC });
-        const decoder = createDecoder(SERVER_TOPIC);
+        // Create encoders and decoders for both topics
+        const clientDecoder = createDecoder(CLIENT_TOPIC);
+        const serverEncoder = createEncoder({ contentTopic: SERVER_TOPIC });
 
-        await node.filter.subscribe([decoder], (wakuMessage) => {
+        // Listen for client messages
+        await node.filter.subscribe([clientDecoder], async (wakuMessage) => {
           if (!wakuMessage.payload || !isSubscribed) return;
           
           const message = new TextDecoder().decode(wakuMessage.payload);
-          console.log("Received from server:", message);
-          setMessages(prev => [...prev, { type: 'server', content: message }]);
+          console.log("Received from client:", message);
+          
+          // Add received message to the list
+          setMessages(prev => [...prev, { type: 'received', content: message }]);
+
+          // Auto-reply if enabled
+          if (autoReply) {
+            const response = `Auto-reply to: ${message}`;
+            console.log("Preparing auto-reply:", response);
+            
+            const success = await sendMessageWithRetry(node, serverEncoder, response);
+            if (success) {
+              setMessages(prev => [...prev, { type: 'sent', content: response }]);
+            }
+          }
         });
 
         // Set up peer monitoring with reconnection logic
@@ -97,7 +113,7 @@ const Home = () => {
         }, 10000);
 
         if (isSubscribed) {
-          setWaku({ node, encoder });
+          setWaku({ node, serverEncoder });
           setStatus("connected");
         }
       } catch (error) {
@@ -121,18 +137,15 @@ const Home = () => {
         wakuNode.stop().catch(console.error);
       }
     };
-  }, []);
+  }, [autoReply]);
 
-  const handleSendMessage = async () => {
-    if (!waku?.node || !waku?.encoder || !inputMessage.trim()) return;
+  const handleSendCustomResponse = async () => {
+    if (!waku?.node || !waku?.serverEncoder || !customResponse.trim()) return;
 
-    const message = inputMessage.trim();
-    console.log("Attempting to send message:", message);
-    
-    const success = await sendMessageWithRetry(waku.node, waku.encoder, message);
+    const success = await sendMessageWithRetry(waku.node, waku.serverEncoder, customResponse.trim());
     if (success) {
-      setMessages(prev => [...prev, { type: 'client', content: message }]);
-      setInputMessage("");
+      setMessages(prev => [...prev, { type: 'sent', content: customResponse }]);
+      setCustomResponse("");
     }
   };
 
@@ -140,7 +153,7 @@ const Home = () => {
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-2xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold mb-2">Waku Chat Demo</h1>
+          <h1 className="text-2xl font-bold mb-2">Waku Test Server</h1>
           <div className="space-y-2">
             <div className={`text-sm ${
               status === 'connected' ? 'text-green-500' : 
@@ -155,19 +168,31 @@ const Home = () => {
           </div>
         </div>
 
-        <div className="mb-6">
+        <div className="mb-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={autoReply}
+                onChange={(e) => setAutoReply(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <span>Auto Reply</span>
+            </label>
+          </div>
+
           <div className="flex gap-2">
             <input
               type="text"
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder="Type your message..."
+              value={customResponse}
+              onChange={(e) => setCustomResponse(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleSendCustomResponse()}
+              placeholder="Type custom response..."
               className="flex-1 px-4 py-2 rounded-lg border border-border bg-background"
               disabled={status !== 'connected'}
             />
             <button
-              onClick={handleSendMessage}
+              onClick={handleSendCustomResponse}
               disabled={status !== 'connected'}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg disabled:opacity-50"
             >
@@ -177,17 +202,20 @@ const Home = () => {
         </div>
 
         <div className="border border-border rounded-lg p-4">
-          <h2 className="text-lg font-semibold mb-4">Messages</h2>
+          <h2 className="text-lg font-semibold mb-4">Message Log</h2>
           <div className="space-y-2">
             {messages.map((msg, index) => (
               <div
                 key={index}
                 className={`p-2 rounded-lg ${
-                  msg.type === 'client' 
-                    ? 'bg-primary/10 ml-auto max-w-[80%]' 
-                    : 'bg-secondary/10 mr-auto max-w-[80%]'
+                  msg.type === 'received' 
+                    ? 'bg-primary/10 mr-auto max-w-[80%]' 
+                    : 'bg-secondary/10 ml-auto max-w-[80%]'
                 }`}
               >
+                <div className="text-xs opacity-50 mb-1">
+                  {msg.type === 'received' ? 'Received' : 'Sent'}:
+                </div>
                 {msg.content}
               </div>
             ))}
@@ -198,6 +226,6 @@ const Home = () => {
   );
 };
 
-export default dynamic(() => Promise.resolve(Home), {
+export default dynamic(() => Promise.resolve(TestPage), {
   ssr: false
-});
+}); 

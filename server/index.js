@@ -32,25 +32,37 @@ async function startServer() {
 
     // Subscribe to client messages
     await waku.filter.subscribe([decoder], async (wakuMessage) => {
-        console.log("Received message from client:", wakuMessage);
-      if (!wakuMessage.payload) return;
-      
-      try {
-        const message = new TextDecoder().decode(wakuMessage.payload);
-        console.log("\nReceived message from client:", message);
+        console.log("Raw message received:", wakuMessage);
+        console.log("Decoder topic:", CLIENT_TOPIC);
+        
+        if (!wakuMessage.payload) {
+            console.log("No payload in message");
+            return;
+        }
+        
+        try {
+            const message = new TextDecoder().decode(wakuMessage.payload);
+            console.log("\nReceived message from client:", message);
 
-        // Create response
-        const response = `Server received: "${message}" at ${new Date().toLocaleTimeString()}`;
-        console.log("Sending response:", response);
+            // Create response
+            const response = `Server received: "${message}" at ${new Date().toLocaleTimeString()}`;
+            console.log("Sending response:", response);
+            console.log("Using encoder with topic:", SERVER_TOPIC);
 
-        // Send response using lightPush
-        await waku.lightPush.send(encoder, {
-          payload: new TextEncoder().encode(response)
-        });
-        console.log("Response sent successfully");
-      } catch (error) {
-        console.error("Error processing message:", error);
-      }
+            // Send response using lightPush
+            await waku.lightPush.send(encoder, {
+                payload: new TextEncoder().encode(response)
+            });
+            console.log("Response sent successfully");
+        } catch (error) {
+            console.error("Error processing message:", error);
+            console.error(error.stack);
+        }
+    });
+
+    console.log("Sending test message to verify connection...");
+    await waku.lightPush.send(encoder, {
+        payload: new TextEncoder().encode("Server is online")
     });
 
     console.log("\nServer is ready and listening for messages!");

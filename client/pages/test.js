@@ -13,6 +13,35 @@ const TestPage = () => {
   const [customResponse, setCustomResponse] = useState("");
   const [autoReply, setAutoReply] = useState(true);
   const [peerCount, setPeerCount] = useState(0);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  // Helper function to generate response using Ollama
+  const generateResponse = async (message) => {
+    try {
+      const response = await fetch('http://localhost:11434/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'dolphin-llama3',
+          prompt: `You are a helpful assistant. Please provide a natural and engaging response to this message: "${message}"
+                  Keep your response concise (1-2 sentences).`,
+          stream: false
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Ollama API error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.response.trim();
+    } catch (error) {
+      console.error('Failed to generate response:', error);
+      return null;
+    }
+  };
 
   // Helper function to send messages with retry
   const sendMessageWithRetry = async (node, encoder, message, retries = 3) => {
@@ -76,14 +105,26 @@ const TestPage = () => {
           // Add received message to the list
           setMessages(prev => [...prev, { type: 'received', content: message }]);
 
-          // Auto-reply if enabled
-          if (autoReply) {
-            const response = `Auto-reply to: ${message}`;
-            console.log("Preparing auto-reply:", response);
-            
-            const success = await sendMessageWithRetry(node, serverEncoder, response);
-            if (success) {
-              setMessages(prev => [...prev, { type: 'sent', content: response }]);
+          // Generate and send response if auto-reply is enabled
+          if (autoReply && !isGenerating) {
+            setIsGenerating(true);
+            try {
+              console.log("Generating response using Ollama...");
+              const generatedResponse = await generateResponse(message);
+              
+              if (generatedResponse) {
+                console.log("Generated response:", generatedResponse);
+                const success = await sendMessageWithRetry(node, serverEncoder, generatedResponse);
+                if (success) {
+                  setMessages(prev => [...prev, { type: 'sent', content: generatedResponse }]);
+                }
+              } else {
+                console.error("Failed to generate response");
+              }
+            } catch (error) {
+              console.error("Error in generate-and-send flow:", error);
+            } finally {
+              setIsGenerating(false);
             }
           }
         });
@@ -165,6 +206,11 @@ const TestPage = () => {
             <div className="text-sm">
               Connected Peers: {peerCount}
             </div>
+            {isGenerating && (
+              <div className="text-sm text-blue-500">
+                Generating response...
+              </div>
+            )}
           </div>
         </div>
 
@@ -177,7 +223,7 @@ const TestPage = () => {
                 onChange={(e) => setAutoReply(e.target.checked)}
                 className="rounded border-gray-300"
               />
-              <span>Auto Reply</span>
+              <span>Auto Reply (using Ollama)</span>
             </label>
           </div>
 

@@ -9,7 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@waku/sdk": "^0.0.29",
+    "@waku/sdk": "^0.0.30-c43cec2.0",
+    "axios": "^1.7.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.474.0",
